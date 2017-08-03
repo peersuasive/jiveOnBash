@@ -1,0 +1,99 @@
+##
+# handle person ressources
+##
+#########################################################################
+# Jive API for Bash (jab).                                              #
+#                                                                       #
+# This file is part of the Jive API for Bash (jab).                     #
+#                                                                       #
+# (c) MMXVII, Christophe Berbizier (dBdL) <cberbizier@peersuasive.com>  #
+# 																		#
+# This program is free software: you can redistribute it and/or modify  #
+# it under the terms of the GNU General Public License as published by  #
+# the Free Software Foundation, version 3.								#
+#																		#
+# This program is distributed in the hope that it will be useful, but 	#
+# WITHOUT ANY WARRANTY; without even the implied warranty of 			#
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU 		#
+# General Public License for more details.								#
+#																		#
+# You should have received a copy of the GNU General Public License 	#
+# along with this program. If not, see <http://www.gnu.org/licenses/>.	#
+#																		#
+#########################################################################
+
+#mid=
+#get_member_id() {
+#    ## TODO
+#    mid="https://example.jiveon.com/api/core/v3/people/$1"
+#    echo "$mid"
+#}
+
+
+_person_help() {
+    cat<<'EOH'
+Usage: person [ACTION] [OPTION...]
+Actions:
+    -g|--get <username> get person's available informations (default)
+    -u|--url <username> return person's url
+EOH
+}
+
+_person_get_person() {
+    [[ "$1" == -q ]] && quiet=1 && shift
+    [[ -z "$1" ]] && return 1
+    if _curl ${quiet:+-q} "" "people/username/${1}${2:+?fields=$2}" GET; then
+        !((quiet)) && echo "$_json"
+    else
+        _err "Failed to get person '$1'"
+        return 1
+    fi
+    return 0
+}
+
+_purl=
+_person_get_url() {
+    [[ -z "$1" ]] && return 1
+    _purl=
+    local id url
+    if _person_get_person -q "$1"; then
+        id=$( echo "$_json" |jq -r .id )
+    fi
+    if [[ -n "$id" ]]; then
+        url="${base_url}/people/${id}"
+        _purl=$url
+        echo "$url"
+    else
+        _err "No person found with username '$1'"
+        return 1
+    fi
+    return 0
+}
+
+person() {
+    _dbg "PERSON"
+    help_cmd=_person_help
+
+    local oldIFS=$IFS
+    local IFS=$'\n'
+    OPTS=(
+        ["-g"]=action_get_person::1
+        ["--get"]=action_get_person::1
+        ["-u"]=action_get_url::1
+        ["--url"]=action_get_url::1
+    )
+    IFS=$oldIFS
+
+    parse_options "$@"
+    action=${action:-get_person}
+    _dbg "person: $get_person"
+    set -- ${ARGS[@]}
+
+    case $action in
+        get_person) _person_get_person "$get_person";;
+        get_url) _person_get_url "$get_url";;
+    esac
+}
+
+register "person"
+# vim: ft=sh

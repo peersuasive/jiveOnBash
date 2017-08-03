@@ -1,0 +1,206 @@
+#!/usr/bin/env bash
+
+
+#########################################################################
+# Jive API for Bash (jab).                                              #
+#                                                                       #
+# This file is part of the Jive API for Bash (jab).                     #
+#                                                                       #
+# (c) MMXVII, Christophe Berbizier (dBdL) <cberbizier@peersuasive.com>  #
+# 																		#
+# This program is free software: you can redistribute it and/or modify  #
+# it under the terms of the GNU General Public License as published by  #
+# the Free Software Foundation, version 3.								#
+#																		#
+# This program is distributed in the hope that it will be useful, but 	#
+# WITHOUT ANY WARRANTY; without even the implied warranty of 			#
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU 		#
+# General Public License for more details.								#
+#																		#
+# You should have received a copy of the GNU General Public License 	#
+# along with this program. If not, see <http://www.gnu.org/licenses/>.	#
+#																		#
+#########################################################################
+
+DEBUG=$DEBUG
+!((DEBUG))&&DEBUG=
+exec 3>&1 4>&2
+((DEBUG)) && {
+_dbg() {
+    echo "DBG: $@" >&4
+}
+curl="_dbg curl "
+}||{
+_dbg() {
+    :
+}
+curl=curl
+}
+
+__tmp_dir=$(mktemp -d /tmp/jab_XXXXXX)
+__cleanup() {
+    local c=$?
+    ((c || DEBUG>1)) && {
+        echo "tmp dir is $__tmp_dir" >&4
+    }||{
+        \rm -rf "$__tmp_dir";}
+}
+trap __cleanup EXIT
+
+_err_msg=
+_err() {
+    echo "$@" >&4
+}
+
+_msg() {
+    echo "$@" >&3
+}
+
+declare -A commands
+register() {
+    commands["$1"]="${2:-$1}"
+}
+
+todo() {
+    _err "Functionnality ${1:+'$1' }is yet to be implemented!..."
+    exit 1
+}
+
+help_cmd() {
+    :
+}
+declare -A OPTS=()
+ARGS=()
+parse_options() {
+    ARGS=()
+    local oldIFS=$IFS
+    local IFS=$'\n'
+    local EOO=0
+
+    while (($#)); do
+        o=$1
+        _dbg "o: '$o'"
+        case "$o" in
+            -h|--help) $help_cmd; exit 0;;
+            --) EOO=1;;
+            -*)((EOO)) && {
+                ARGS+=( "$o" )
+            }||{
+                local val
+                val=${OPTS["$o"]}
+                if [[ -n "$val" ]]; then
+                    local k v
+                    k=${val%%::*}; v=${val##*::}
+                    [[ "$k" =~ ^action_ ]] && {
+                        action=${k##action_}
+                        k=$action
+                        _dbg "setting action to: '$action'"
+                    }
+                    if ((v)); then
+                        local vals=()
+                        for ((i=0;i<$v;++i)); do
+                            [[ -z "$2" ]] && _err "ERROR: missing required argument for option '$o'" && exit 1
+                            vals+=( "$2" )
+                            shift
+                        done
+                        eval "${k}=( '${vals[@]}' )"
+                    else
+                        eval "${k}=1"
+                    fi
+                else
+                    _err "Unknown option '$o'."; $help_cmd; exit 1; 
+                fi
+            };;
+            *) ARGS+=( "$o" );;
+        esac
+        shift
+    done
+    IFS=$oldIFS
+}
+
+base_url='https://sandbox.jiveon.com/api/core/v3'
+log=${__tmp_dir}/out.log
+err=${__tmp_dir}/err.log
+_json=
+_curl() {
+    [[ "$1" == -q ]] && quiet=1 && shift
+	local data tmp_data url METH
+    data="$1"; shift
+    url=${base_url}/${1#/}; shift
+    METH=${1:-POST}; shift
+    EXTRA_ARGS="$@"
+    [[ "$METH" == GET ]] && METH="" || METH=${METH:-POST}
+    if [[ "$METH" =~ ^FORM(.+)$ && -n "$data" ]]; then
+        METH=${BASH_REMATCH[1]}
+        tmp_data=$(mktemp -u ${__tmp_dir}/XXXXXXX.json)
+        echo "$data" > $tmp_data
+        data=""
+        EXTRA_ARGS+=" -F json=@${tmp_data};type=application/json"
+    fi
+    >$log
+    >$err
+    $curl -s -v -n -k ${METH:+-X $METH} ${data:+-H "Content-Type: application/json" --data "$data"} "$url" ${EXTRA_ARGS} 2>$err 1>>$log
+    r=$?
+    if ((DEBUG)); then
+        echo 'HTTP/1.1 200 OK' > $err
+        echo '{"placeID":"123456"}' > $log
+    fi
+    s=$(cat "$err"|grep 'HTTP/1.1 '|tail -n1|sed -e 's,\r,,g')
+    if [[ "$s" =~ HTTP/1.1\ ([0-9]+)\ +(.+)$ ]]; then
+        c=${BASH_REMATCH[1]}
+        m=${BASH_REMATCH[2]}
+    fi
+
+    if ((r)); then
+        _err "Error with curl command: $(cat $err)"
+    else
+        if [[ -s "$log" ]]; then
+            ((quiet)) && { _json="$(cat "$log")"; return 0;}||{
+            cat "$log" | jq .;}
+        fi
+    fi
+    case $c in
+        4[0-9][0-9]) r=1;;
+        5[0-9][0-9]) r=1;;
+        *) r=0;;
+    esac
+    !((quiet)) && echo "status: $c ($m)" >&2
+    return $r
+}
+
+help() {
+    cmd="${commands["${1:-ukn}"]}"
+    if [[ -z "$cmd" ]]; then
+        [[ -n "$1" ]] && _msg "Unknown command: $cmd."
+        _msg "Available commands: "
+        for k in ${!commands[@]}; do
+            _msg "    $k"
+        done
+        exit 1
+    else
+        $cmd --help
+    fi
+}
+register "help"
+
+for c in commands/*; do
+    . "$c"
+done
+
+_help() {
+    _msg "Usage: $( basename "$(readlink -f "$0")" ) [help] <command> [command-options]"
+    help
+}
+#commands:
+#    places                          list all available places for logged-in user
+#    publish <place> <file>          push file to the specified place
+#    published <place>               list all published files in the specified place
+#    update <place> <file> <file-id> update the content of the published file
+[[ "$1" == -h || "$1" == --help ]] && { shift; _help; exit 0; }
+
+[[ -z "$1" ]] && _err "ERROR: No command provided." && _err && _help && exit 1
+
+cmd=${commands["$1"]}; shift
+[[ -z "$cmd" ]] && _err "ERROR: Unknown command: $1" && _err && _help && exit 1
+
+$cmd "$@"

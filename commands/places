@@ -1,0 +1,137 @@
+##
+# handle places
+##
+#########################################################################
+# Jive API for Bash (jab).                                              #
+#                                                                       #
+# This file is part of the Jive API for Bash (jab).                     #
+#                                                                       #
+# (c) MMXVII, Christophe Berbizier (dBdL) <cberbizier@peersuasive.com>  #
+# 																		#
+# This program is free software: you can redistribute it and/or modify  #
+# it under the terms of the GNU General Public License as published by  #
+# the Free Software Foundation, version 3.								#
+#																		#
+# This program is distributed in the hope that it will be useful, but 	#
+# WITHOUT ANY WARRANTY; without even the implied warranty of 			#
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU 		#
+# General Public License for more details.								#
+#																		#
+# You should have received a copy of the GNU General Public License 	#
+# along with this program. If not, see <http://www.gnu.org/licenses/>.	#
+#																		#
+#########################################################################
+
+
+_place_help() {
+    cat<<'EOH'
+Usage: places [ACTION] [OPTION...] [<place>...]
+Actions:
+    -g|--get (default)              list all available places for user
+        -u|--user <user>            whenever possible, execute action for user <user>
+        -r|--raw                    use the provided filter directly instead of computing one
+        -s|--short                  return only places ID
+    -c|--create <name>              create the new place <name>
+    -d|--delete <place>             delete existing place <place>
+    -m|--rename <place> <new-name>  rename place <place> to <new-name>
+EOH
+}
+
+_esc=
+_esc_special() {
+    _esc="$@"
+    return 0
+    local v="$@"
+    v=${v//,/\\,}
+    v=${v//\\/\\\\}
+    v=${v//\(/\\\(}
+    v=${v//\)/\\\)}
+    _esc=$v
+}
+
+_place_get_places() {
+    [[ "$1" == -q ]] && quiet=1 && shift
+    if !((no_user)); then
+        owner=${jive_user:+"owner($(_person_get_url "$jive_user"))"}
+        filter="${pre}filter=relationship(${owner:-owner})"
+        pre='&'
+    fi
+
+    if [[ -n "$raw_filter" ]]; then
+        _dbg "set filter ? '$filter'"
+        filter+="${pre}${raw_filter}"
+        pre='&'
+    else
+        if [[ -n "$1" ]]; then
+            local search
+            search="$1"; shift
+            _esc_special "$search"; search=$_esc
+            while (($#)); do
+                _esc_special "$1"
+                search+=",$_esc"
+                shift
+            done
+            filter+="&filter=search($search)"
+        fi
+    fi
+    _dbg "filter: '$filter'"
+
+    if ! _curl ${quiet:+-q} "" "places${filter:+/$filter}" GET; then
+        _err "Command failed!"
+    elif ((quiet)); then
+        echo "$_json"|jq -r '..|.placeID?|(select(. != null))'
+    fi
+}
+
+places() {
+    _dbg "PLACES"
+    help_cmd=_place_help
+    local action filter get_places jive_user raw_filter short
+    local oldIFS=$IFS
+    local IFS=$'\n'
+    OPTS=(
+        ["-g"]=action_get_places::0
+        ["--get"]=action_get_places::0
+        ["-u"]=jive_user::1
+        ["--user"]=jive_user::1
+        ["-n"]=no_user::0
+        ["--no-user"]=no_user::0
+        ["-r"]=raw_filter::1
+        ["--raw"]=raw_filter::1
+        ["-s"]=short::0
+        ["--short"]=short::0
+        ["-d"]=action_delete_place::1
+        ["--delete"]=action_delete_place::1
+        ["-m"]=action_rename_place::2
+        ["--move"]=action_rename_place::2
+        ["-c"]=action_create_place::1
+        ["--create"]=action_create_place::1
+        ["-t"]=action_tag_place::2
+        ["--tag"]=action_tag_place::2
+    )
+    IFS=$oldIFS
+
+    parse_options "$@"
+    action=${action:-get_places}
+
+    _dbg "action: '$action'"
+    _dbg "get places ? '${get_places[@]}'"
+    _dbg "other user ? '${jive_user[@]}'"
+    _dbg "raw_filter ? '${raw_filter[@]}'"
+
+    ## TODO: look for registered member-id
+    ## relation=(owner(https://example.jiveon.com/api/core/v3/people/{MEMBER-ID}))
+    pre='?'
+    set -- ${ARGS[@]}
+    _dbg "left arguments ? '$@'"
+    ## real work goes here
+    case "$action" in
+        get_places) _place_get_places ${short:+-q} "$@";;
+        create_place) todo "create";;
+        delete_place) todo "delete";;
+        rename_place) todo "rename";;
+        tag_place) todo "tag";;
+    esac
+}
+register "places" "places"
+# vim: ft=sh

@@ -1,0 +1,178 @@
+##
+# attach file to document or place
+##
+#########################################################################
+# Jive API for Bash (jab).                                              #
+#                                                                       #
+# This file is part of the Jive API for Bash (jab).                     #
+#                                                                       #
+# (c) MMXVII, Christophe Berbizier (dBdL) <cberbizier@peersuasive.com>  #
+# 																		#
+# This program is free software: you can redistribute it and/or modify  #
+# it under the terms of the GNU General Public License as published by  #
+# the Free Software Foundation, version 3.								#
+#																		#
+# This program is distributed in the hope that it will be useful, but 	#
+# WITHOUT ANY WARRANTY; without even the implied warranty of 			#
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU 		#
+# General Public License for more details.								#
+#																		#
+# You should have received a copy of the GNU General Public License 	#
+# along with this program. If not, see <http://www.gnu.org/licenses/>.	#
+#																		#
+#########################################################################
+
+_attach_help() {
+    cat<<'EOH'
+Usage: attach [ACTION] [OPTION...] [<file>...]
+Actions:
+    -a|--attach <file>              upload contents of <file>
+        -pid|--place-id <place>     upload file to <placeID>
+        -p|--place <place>          upload file to <place> (will try to look for it)
+        -s|--subject                set a subject 
+        -d|--description            add a description
+        -S|--status                 set file publication status (default: incomplete)
+        -A|--authorship             set file authorshipt (default: author)
+        -t|--tags                   set some tags separated by a comma
+        -v|--visibility             set file visibility (default: place, if one is provided; hidden otherwise)
+    -u|--update <file>              update content of an existing file
+        (same options as for a new file)
+EOH
+}
+
+_attach_get_place() {
+    local _pID
+    _pID=( ${attach_placeid:-${attach_place:+$(places -g -s "${attach_place}")}} )
+    [[ -n "${attach_placeid:-$attach_place}" ]] && ((${#_pID[@]}==0)) \
+        && _err "No place found matching ${attach_placeid:-$attach_place}" && return 1
+    ((${#_pID[@]}>1)) && _err "Too many matches for '$attach_place' (${_pID[@]}), please refine." && return 1
+    echo ${_pID[@]}
+    return 0
+}
+
+_attach_get_document() {
+    :
+}
+
+_attach_file() {
+    [[ "$1" == -q ]] && quiet=1 && shift
+    [[ -z "$1" ]] && return 1
+    local data file placeID author subject description authorship status tags size name parent mt visibility METHOD doctype
+    file="$( readlink -f "$1" )"
+    ! [[ -f "$file" && -r "$file" ]] && _err "Can't open file '$file'. Aborting." && return 1
+    shift
+    
+    placeID=$(_attach_get_place) || return 1
+    [[ -z "$placeID" ]] && todo "attach file without a place"
+    parent=${placeID:+${base_url}/${placeID}/}
+    visibility=${attach_visibility:-${parent:+place}}; : ${visibility:=hidden}
+
+    name=$(basename "$file")
+    mt=$(mimetype -b "$file")
+    size=$(stat -c %s "$file")
+
+    subject=${attach_subject}
+    ((${#subject}>255)) && _err "Warning: truncating subject to 255 chars..." && subject="${subject:0:252}..."
+    description=${attach_description}
+    #status=${attach_status:-incomplete}
+    status=${attach_status}
+    authorship=${attach_authorship:-author}
+    tags="[$attach_tags]"
+
+    case $action in
+        attach_file) doctype=document; METHOD=FORMPOST;;
+        update_file) doctype=update; METHOD=FORMPOST;;
+    esac
+
+    data="$(cat <<EOT
+{
+    "type": "${doctype}",
+    "authorship": "$authorship",
+EOT
+[[ -n "$status" ]] && cat<<EOT
+    "status": "$status",
+EOT
+[[ -n "$parent" ]] && cat<<EOT
+    "visibility": "$visibility",
+    "parent": "$parent",
+EOT
+[[ -n "$subject" ]] && cat<<EOT
+    "subject": "$subject",
+EOT
+cat <<EOT
+    "tags": $tags,
+    "content": {
+        "type": "$mt",
+        "text": "$description",
+        "name" : "$name",
+        "size" : "$size"
+    }
+}
+EOT
+)"
+    _dbg "data: $data"
+    
+    if [[ -n "$placeID" ]]; then
+        _msg "Uploading data, please wait... This can take a while, even for very short documents..."
+        if _curl ${quiet:+-q} "$data" \
+            "places/$placeID/contents" "${METHOD}" \
+            -F "file=@${file};type=$mt"
+        then
+            return 0
+        else
+            return 1
+        fi
+    fi
+    return 1
+}
+_update_file() {
+    _attach_file "$@"
+}
+
+attach() {
+    _dbg "PERSON"
+    help_cmd=_attach_help
+    local attach_file attach_place placeid
+    local oldIFS=$IFS
+    local IFS=$'\n'
+    OPTS=(
+        ["-a"]=action_attach_file::1
+        ["--attach"]=action_attach_file::1
+        ["-u"]=action_update_file::1
+        ["--update"]=action_update_file::1
+        ["-p"]=attach_place::1
+        ["--place"]=attach_place::1
+        ["-pid"]=attach_placeid::1
+        ["--place-id"]=attach_placeid::1
+        ["-s"]=attach_subject::1
+        ["--subject"]=attach_subject::1
+        ["-d"]=attach_description::1
+        ["--description"]=attach_description::1
+        ["-S"]=attach_status::1
+        ["--status"]=attach_status::1
+        ["-A"]=attach_authorship::1
+        ["--authorship"]=attach_authorship::1
+        ["-t"]=attach_tags::1
+        ["--tags"]=attach_tags::1
+        ["-v"]=attach_visibility::1
+        ["--visibility"]=attach_visibility::1
+    )
+    IFS=$oldIFS
+
+    parse_options "$@"
+    set -- ${ARGS[@]}
+    [[ -z "$action" ]] && attach_file="$1" && shift
+    action=${action:-attach_file}
+    _dbg "action: $action"
+    _dbg "file: $attach_file"
+    _dbg "place: $attach_place"
+    local r=0
+    case $action in
+        attach_file) _attach_file "$attach_file";r=$?;;
+        update_file) _update_file "$update_file";r=$?;;
+    esac
+    return $r
+}
+register "attach"
+
+# vim: ft=sh
