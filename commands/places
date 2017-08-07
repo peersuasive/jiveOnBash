@@ -52,13 +52,14 @@ _esc_special() {
 _place_get_places() {
     [[ "$1" == -q ]] && quiet=1 && shift
     if !((no_user)); then
+        _dbg "set owner to ${owner:-owner}"
         owner=${jive_user:+"owner($(_person_get_url "$jive_user"))"}
         filter="${pre}filter=relationship(${owner:-owner})"
         pre='&'
     fi
 
     if [[ -n "$raw_filter" ]]; then
-        _dbg "set filter ? '$filter'"
+        _dbg "set raw filter ? '$filter'"
         filter+="${pre}${raw_filter}"
         pre='&'
     else
@@ -71,7 +72,8 @@ _place_get_places() {
                 search+=",$_esc"
                 shift
             done
-            filter+="&filter=search($search)"
+            filter+="${pre}filter=search($search)"
+            pre='&'
         fi
     fi
     _dbg "filter: '$filter'"
@@ -79,14 +81,14 @@ _place_get_places() {
     if ! _curl ${quiet:+-q} "" "places${filter:+/$filter}" GET; then
         _err "Command failed!"
     elif ((quiet)); then
-        echo "$_json"|jq -r '..|.placeID?|(select(. != null))'
+        echo "$_json"|jq -M --unbuffered -r '..|.placeID?|(select(. != null))'
     fi
 }
 
 places() {
     _dbg "PLACES"
     help_cmd=_place_help
-    local action filter get_places jive_user raw_filter short
+    local action filter get_places jive_user raw_filter short pre
     local oldIFS=$IFS
     local IFS=$'\n'
     OPTS=(

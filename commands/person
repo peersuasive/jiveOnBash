@@ -57,7 +57,7 @@ _person_get_url() {
     _purl=
     local id url
     if _person_get_person -q "$1"; then
-        id=$( echo "$_json" |jq -r .id )
+        id=$( echo "$_json" |jq -M --ubunffered -r .id )
     fi
     if [[ -n "$id" ]]; then
         url="${base_url}/people/${id}"

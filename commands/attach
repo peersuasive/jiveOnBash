@@ -27,16 +27,17 @@ _attach_help() {
 Usage: attach [ACTION] [OPTION...] [<file>...]
 Actions:
     -a|--attach <file>              upload contents of <file>
-        -pid|--place-id <place>     upload file to <placeID>
+        -pid|--place-id <id>        upload file to <placeID>
         -p|--place <place>          upload file to <place> (will try to look for it)
         -s|--subject                set a subject 
         -d|--description            add a description
         -S|--status                 set file publication status (default: incomplete)
-        -A|--authorship             set file authorshipt (default: author)
+        -A|--authorship             set file authorship (default: author)
         -t|--tags                   set some tags separated by a comma
         -v|--visibility             set file visibility (default: place, if one is provided; hidden otherwise)
     -u|--update <file>              update content of an existing file
-        (same options as for a new file)
+        (same options as for a new file +)
+        -did|--document-id <id>     upload file to document with the provided ID
 EOH
 }
 
@@ -51,10 +52,33 @@ _attach_get_place() {
 }
 
 _attach_get_document() {
-    :
+    local documents attachments matches
+    documents=$(_curl ${quiet:+-q} "$data" \
+        "places/${placeID}/contents?filter=type(document)" GET)
+    ((DEBUG)) && [[ -r tests/documents.json ]] && documents=$(cat tests/documents.json)
+    #attachments=$( echo "$documents" | jq -M --unbuffered -r '..|.attachments?|(select(..|.name?|select(. != null)))' )
+    attachments=$( echo "$documents" | jq -M --unbuffered -r '.list[]?.attachments[]?' )
+    _dbg "attachments: $attachments" 
+    matches=( $( echo "$attachments" | jq -M --unbuffered -r 'select(.name | test("'${name}'"; "i"))' ) ) || return 1
+    _dbg "matches: ${matches[@]}"
+    local m=${#matched[@]}
+    ((m == 0)) && _err "No document found matching criteria '${name}'." && return 1
+    ((m > 1)) && _err "Too many documents found, please select one and provide a document-id instead:" && return 1
+    echo "matches: ${matched[@]}"
+}
+
+_attach_update_file() {
+    _msg "Looking for document..."
+    local docs
+    docs=$( _attach_get_document ) || return 1
+
+    ## debug
+
+    todo "WIP"
 }
 
 _attach_file() {
+    local quiet
     [[ "$1" == -q ]] && quiet=1 && shift
     [[ -z "$1" ]] && return 1
     local data file placeID author subject description authorship status tags size name parent mt visibility METHOD doctype
@@ -63,7 +87,7 @@ _attach_file() {
     shift
     
     placeID=$(_attach_get_place) || return 1
-    [[ -z "$placeID" ]] && todo "attach file without a place"
+    [[ -z "$placeID" && -z "$documentID" ]] && todo "attach file without a place"
     parent=${placeID:+${base_url}/${placeID}/}
     visibility=${attach_visibility:-${parent:+place}}; : ${visibility:=hidden}
 
@@ -81,7 +105,9 @@ _attach_file() {
 
     case $action in
         attach_file) doctype=document; METHOD=FORMPOST;;
-        update_file) doctype=update; METHOD=FORMPOST;;
+        update_file)
+            doctype=update; METHOD=FORMPOST;
+            _attach_update_file || return 1;;
     esac
 
     data="$(cat <<EOT
@@ -125,8 +151,18 @@ EOT
     fi
     return 1
 }
+
 _update_file() {
+    ## if subject's a no match,
+    # get all documents from the space and,
+    # if there's only one document, pick that one, 
+    # otherwise, if interactive mode is detected,
+    # display a choice list with the title/subject of the document
+
+    # attachements are in attachments[]
+
     _attach_file "$@"
+    return $?
 }
 
 attach() {
@@ -143,6 +179,8 @@ attach() {
         ["-p"]=attach_place::1
         ["--place"]=attach_place::1
         ["-pid"]=attach_placeid::1
+        ["-did"]=attach_document_id::1
+        ["--document-id"]=attach_document_id::1
         ["--place-id"]=attach_placeid::1
         ["-s"]=attach_subject::1
         ["--subject"]=attach_subject::1
@@ -166,6 +204,8 @@ attach() {
     _dbg "action: $action"
     _dbg "file: $attach_file"
     _dbg "place: $attach_place"
+    _dbg "file: $attach_file"
+    _dbg "update: $update_file"
     local r=0
     case $action in
         attach_file) _attach_file "$attach_file";r=$?;;
