@@ -84,7 +84,7 @@ person() {
     )
     IFS=$oldIFS
 
-    parse_options "$@"
+    parse_options "$@" || return 1
     action=${action:-get_person}
     _dbg "person: $get_person"
     set -- ${ARGS[@]}

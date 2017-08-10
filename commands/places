@@ -113,7 +113,7 @@ places() {
     )
     IFS=$oldIFS
 
-    parse_options "$@"
+    parse_options "$@" || return 1
     action=${action:-get_places}
 
     _dbg "action: '$action'"

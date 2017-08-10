@@ -198,7 +198,7 @@ attach() {
     )
     IFS=$oldIFS
 
-    parse_options "$@"
+    parse_options "$@" || return 1
     set -- ${ARGS[@]}
     [[ -z "$action" ]] && attach_file="$1" && shift
     action=${action:-attach_file}
