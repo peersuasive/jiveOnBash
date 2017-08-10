@@ -39,7 +39,8 @@ _dbg() {
 curl=curl
 }
 
-__tmp_dir=$(mktemp -d /tmp/jab_XXXXXX)
+readonly oldIFS=$IFS
+readonly __tmp_dir=$(mktemp -d /tmp/jab_XXXXXX)
 __cleanup() {
     local c=$?
     ((c || DEBUG>1)) && {

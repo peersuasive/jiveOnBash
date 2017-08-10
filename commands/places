@@ -89,7 +89,6 @@ places() {
     _dbg "PLACES"
     help_cmd=_place_help
     local action filter get_places jive_user raw_filter short pre
-    local oldIFS=$IFS
     local IFS=$'\n'
     OPTS=(
         ["-g"]=action_get_places::0

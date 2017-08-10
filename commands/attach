@@ -170,7 +170,6 @@ attach() {
     exit 1
     help_cmd=_attach_help
     local attach_file attach_place placeid
-    local oldIFS=$IFS
     local IFS=$'\n'
     OPTS=(
         ["-a"]=action_attach_file::1
