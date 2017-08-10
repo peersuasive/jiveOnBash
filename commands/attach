@@ -166,7 +166,8 @@ _update_file() {
 }
 
 attach() {
-    _dbg "PERSON"
+    _dbg "ATTACH"
+    exit 1
     help_cmd=_attach_help
     local attach_file attach_place placeid
     local oldIFS=$IFS
