@@ -80,14 +80,15 @@ parse_options() {
     local EOO=0
 
     while (($#)); do
+        if ((EOO)); then
+            ARGS+=( "$1" )
+        else
         o=$1
         _dbg "o: '$o'"
         case "$o" in
             -h|--help) $help_cmd; exit 0;;
             --) EOO=1;;
-            -*)((EOO)) && {
-                ARGS+=( "$o" )
-            }||{
+            -*)
                 local val
                 val=${OPTS["$o"]}
                 if [[ -n "$val" ]]; then
@@ -112,9 +113,10 @@ parse_options() {
                 else
                     _err "Unknown option '$o'."; $help_cmd; exit 1; 
                 fi
-            };;
+                ;;
             *) ARGS+=( "$o" );;
         esac
+        fi
         shift
     done
     IFS=$oldIFS
