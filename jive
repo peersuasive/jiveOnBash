@@ -75,7 +75,6 @@ declare -A OPTS=()
 ARGS=()
 parse_options() {
     ARGS=()
-    local oldIFS=$IFS
     local IFS=$'\n'
     local EOO=0
 
@@ -210,8 +209,6 @@ _version() {
 #    publish <place> <file>          push file to the specified place
 #    published <place>               list all published files in the specified place
 #    update <place> <file> <file-id> update the content of the published file
-oldIFS=$IFS
-IFS=$'\n'
 ARGS=()
 EOO=0
 while (($#)); do
@@ -230,9 +227,7 @@ while (($#)); do
     fi
     shift
 done
-#[[ "$1" == -h || "$1" == --help ]] && { shift; _help; exit 0; }
-set -- ${ARGS[@]}
-IFS=$old_IFS
+set -- "${ARGS[@]}"
 [[ -z "$1" ]] && _err "ERROR: No command provided." && _err && _help && exit 1
 
 cmd=${commands["$1"]}; shift
