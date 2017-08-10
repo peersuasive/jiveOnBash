@@ -22,6 +22,8 @@
 #																		#
 #########################################################################
 
+VERSION=0.0
+
 DEBUG=$DEBUG
 !((DEBUG))&&DEBUG=
 exec 3>&1 4>&2
@@ -188,16 +190,47 @@ for c in commands/*; do
 done
 
 _help() {
-    _msg "Usage: $( basename "$(readlink -f "$0")" ) [help] <command> [command-options]"
+    _msg "Usage: $( basename "$(readlink -f "$0")" ) [-v][-h][--][help] <command> [command-options]"
     help
 }
+_version() {
+    echo "Jive API for Bash (jab), version ${VERSION}"
+    echo "Copyright (c) MMXVII Christophe Berbizier."
+    echo
+    echo "License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>"
+    echo
+    echo "This is free software; you are free to change and redistribute it."
+    echo "There is NO WARRANTY, to the extent permitted by law."
+}
+
 #commands:
 #    places                          list all available places for logged-in user
 #    publish <place> <file>          push file to the specified place
 #    published <place>               list all published files in the specified place
 #    update <place> <file> <file-id> update the content of the published file
-[[ "$1" == -h || "$1" == --help ]] && { shift; _help; exit 0; }
-
+oldIFS=$IFS
+IFS=$'\n'
+ARGS=()
+EOO=0
+while (($#)); do
+    if ((EOO)); then
+        ARGS+=( "$1" )
+    elif [[ -n "${commands["$1"]}" ]]; then
+        EOO=1
+        ARGS=( "$1" )
+    else
+        case "$1" in
+            -h|--help)_help; exit 0;;
+            -v|--version)_version; exit 0;;
+            --) EOO=1;;
+            *) ARGS+=( "$1" );;
+        esac
+    fi
+    shift
+done
+#[[ "$1" == -h || "$1" == --help ]] && { shift; _help; exit 0; }
+set -- ${ARGS[@]}
+IFS=$old_IFS
 [[ -z "$1" ]] && _err "ERROR: No command provided." && _err && _help && exit 1
 
 cmd=${commands["$1"]}; shift
