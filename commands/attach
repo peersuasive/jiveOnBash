@@ -58,12 +58,20 @@ _attach_get_document() {
     ((DEBUG)) && [[ -r tests/documents.json ]] && documents=$(cat tests/documents.json)
     #attachments=$( echo "$documents" | jq -M --unbuffered -r '..|.attachments?|(select(..|.name?|select(. != null)))' )
     attachments=$( echo "$documents" | jq -M --unbuffered -r '.list[]?.attachments[]?' )
-    _dbg "attachments: $attachments" 
-    matches=( $( echo "$attachments" | jq -M --unbuffered -r 'select(.name | test("'${name}'"; "i"))' ) ) || return 1
-    _dbg "matches: ${matches[@]}"
-    local m=${#matched[@]}
+    _dbg "attachments: $attachments"
+    matches=( $( echo "$attachments" | jq -M --unbuffered -r 'select(.name | test("'${name}'"; "i"))|.id' ) ) || return 1
+    local m=${#matches[@]}
+    _dbg "matches: $m"
     ((m == 0)) && _err "No document found matching criteria '${name}'." && return 1
-    ((m > 1)) && _err "Too many documents found, please select one and provide a document-id instead:" && return 1
+    if ((m > 1)); then
+        _err "Too many documents found ($m), please pick one and provide its document-id instead:"
+        for m in ${matches[@]}; do
+            _msg "Entry ${m}:"
+            _msg "$(echo $attachments | jq -M -r --unbuffered 'select(.id=="'${m}'")|{name, size, status}')"
+            _msg
+        done
+        return 1
+    fi
     echo "matches: ${matched[@]}"
 }
 
