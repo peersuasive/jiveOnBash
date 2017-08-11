@@ -54,7 +54,8 @@ _attach_get_place() {
     return 0
 }
 
-_attach_check_file() {
+_attach_get_file() {
+    [[ -z "${attach_document_id}" ]] && return 1
     (( DEBUG )) && { cat tests/attach.json; return 0; }
     if _curl ${quiet:+-q} "" \
         "/attachments/${attach_get_document}" GET; then
@@ -63,13 +64,15 @@ _attach_check_file() {
         return 1
     fi
 }
-_attach_get_file() {
+_attach_retrieve_file() {
+    [[ -z "${attach_document_id}" ]] && return 1
     (( DEBUG )) && { cat tests/attach_data.data; return 0; }
     _curl ${quiet:+-q} "" \
         "/attachments/${attach_get_document}/data" GET
     return $?
 }
 _attach_delete_file() {
+    [[ -z "${attach_document_id}" ]] && return 1
     (( DEBUG )) && return 0
     _curl ${quiet:+-q} "" \
         "/attachments/${attach_get_document}" DELETE
@@ -85,15 +88,20 @@ _attach_find_document() {
         _attach_get_file
         return $?
     fi
-    local documents attachments matches
-    documents=$(_curl ${quiet:+-q} "$data" \
+    local doc documents attachments matches
+    documents=$(_curl "" \
         "places/${placeID}/contents?filter=type(document)" GET)
-    ((DEBUG)) && [[ -r tests/documents_complexe.json ]] && documents=$(cat tests/documents_complexe.json | jq -M -r --unbuffered '.list[]?|select(.parentPlace?.id=="'${placeID}'")')
+    ((DEBUG)) && doc="tests/documents_alt.json"
+    ((DEBUG)) && [[ -r "$doc" ]] && \\
+        documents=$(cat "$doc" | jq -M -r --unbuffered '.list[]?|select(.parentPlace?.placeID=="'${placeID}'")')
 
-    attachments=$(echo "$documents" | jq -M -r --unbuffered 'select(.attachments[]?.name|test("'${name}'";"i"))|{id, subject, parentPlace: {id: .parentPlace?.id, name: .parentPlace?.name }, attachment: .attachments[]?|select(.name|test("'${name}'";"i"))|{id, name, contentType, size, status}}')
+    attachments=$(echo "$documents" | jq -M -r --unbuffered 'select(.attachments[]?.name|test("'${name}'";"i"))|{id, subject, parentPlace: {id: .parentPlace?.id, name: .parentPlace?.name }, attachment: .attachments[]?|select(.name|test("'${name}'";"i"))|{id, name, contentType, size, status}}') \
+        || return 1
 
     _dbg "attachments: $attachments"
-    matches=( $( echo "$attachments" | jq -M --unbuffered -r '.attachment?|select(.name? | test("'${name}'"; "i"))|.id' ) ) || return 1
+    matches=( $( echo "$attachments" | jq -M --unbuffered -r '.attachment?|select(.name? | test("'${name}'"; "i"))|.id' ) ) \
+        || return 1
+
     local m=${#matches[@]}
     _dbg "matches: $m"
     ((m == 0)) && _err "No document found matching criteria '${name}'." && return 1
@@ -111,7 +119,6 @@ _attach_find_document() {
         done
         return 1
     fi
-    echo "matches: ${matched[@]}"
 }
 
 _attach_update_file() {
@@ -119,6 +126,7 @@ _attach_update_file() {
     local docs
     docs=$( _attach_find_document ) || return 1
 
+    _dbg "OK: document found"
     ## debug
 
     todo "WIP"

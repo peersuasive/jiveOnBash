@@ -147,7 +147,7 @@ _curl() {
     r=$?
     if ((DEBUG)); then
         echo 'HTTP/1.1 200 OK' > $err
-        echo '{"placeID":"123428"}' > $log
+        echo '{"id":"123428","placeID":"869558"}' > $log
     fi
     s=$(cat "$err"|grep 'HTTP/1.1 '|tail -n1|sed -e 's,\r,,g')
     if [[ "$s" =~ HTTP/1.1\ ([0-9]+)\ +(.+)$ ]]; then
@@ -160,7 +160,7 @@ _curl() {
     else
         if [[ -s "$log" ]]; then
             ((quiet)) && { _json="$(cat "$log")"; return 0;}||{
-            cat "$log" | jq .;}
+            cat "$log" | jq -M .;}
         fi
     fi
     case $c in
