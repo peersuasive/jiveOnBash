@@ -147,7 +147,7 @@ _curl() {
     r=$?
     if ((DEBUG)); then
         echo 'HTTP/1.1 200 OK' > $err
-        echo '{"placeID":"123456"}' > $log
+        echo '{"placeID":"123428"}' > $log
     fi
     s=$(cat "$err"|grep 'HTTP/1.1 '|tail -n1|sed -e 's,\r,,g')
     if [[ "$s" =~ HTTP/1.1\ ([0-9]+)\ +(.+)$ ]]; then
