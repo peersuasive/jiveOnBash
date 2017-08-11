@@ -38,6 +38,9 @@ Actions:
     -u|--update <file>              update content of an existing file
         (same options as for a new file +)
         -did|--document-id <id>     upload file to document with the provided ID
+    -g|--get <file-name>            retrieve content of file matching the provided file-name
+        -did|--document-id <id>     retrieve file belonging to the document with the provided id
+        
 EOH
 }
 
@@ -51,23 +54,59 @@ _attach_get_place() {
     return 0
 }
 
-_attach_get_document() {
+_attach_check_file() {
+    (( DEBUG )) && { cat tests/attach.json; return 0; }
+    if _curl ${quiet:+-q} "" \
+        "/attachments/${attach_get_document}" GET; then
+        return 0
+    else
+        return 1
+    fi
+}
+_attach_get_file() {
+    (( DEBUG )) && { cat tests/attach_data.data; return 0; }
+    _curl ${quiet:+-q} "" \
+        "/attachments/${attach_get_document}/data" GET
+    return $?
+}
+_attach_delete_file() {
+    (( DEBUG )) && return 0
+    _curl ${quiet:+-q} "" \
+        "/attachments/${attach_get_document}" DELETE
+    return $?
+}
+
+_attach_get_version() {
+    :
+}
+
+_attach_find_document() {
+    if [[ -n "$attach_document_id" ]]; then
+        _attach_get_file
+        return $?
+    fi
     local documents attachments matches
     documents=$(_curl ${quiet:+-q} "$data" \
         "places/${placeID}/contents?filter=type(document)" GET)
-    ((DEBUG)) && [[ -r tests/documents.json ]] && documents=$(cat tests/documents.json)
-    #attachments=$( echo "$documents" | jq -M --unbuffered -r '..|.attachments?|(select(..|.name?|select(. != null)))' )
-    attachments=$( echo "$documents" | jq -M --unbuffered -r '.list[]?.attachments[]?' )
+    ((DEBUG)) && [[ -r tests/documents_complexe.json ]] && documents=$(cat tests/documents_complexe.json | jq -M -r --unbuffered '.list[]?|select(.parentPlace?.id=="'${placeID}'")')
+
+    attachments=$(echo "$documents" | jq -M -r --unbuffered 'select(.attachments[]?.name|test("'${name}'";"i"))|{id, subject, parentPlace: {id: .parentPlace?.id, name: .parentPlace?.name }, attachment: .attachments[]?|select(.name|test("'${name}'";"i"))|{id, name, contentType, size, status}}')
+
     _dbg "attachments: $attachments"
-    matches=( $( echo "$attachments" | jq -M --unbuffered -r 'select(.name | test("'${name}'"; "i"))|.id' ) ) || return 1
+    matches=( $( echo "$attachments" | jq -M --unbuffered -r '.attachment?|select(.name? | test("'${name}'"; "i"))|.id' ) ) || return 1
     local m=${#matches[@]}
     _dbg "matches: $m"
     ((m == 0)) && _err "No document found matching criteria '${name}'." && return 1
     if ((m > 1)); then
         _err "Too many documents found ($m), please pick one and provide its document-id instead:"
+        local place subject
         for m in ${matches[@]}; do
             _msg "Entry ${m}:"
-            _msg "$(echo $attachments | jq -M -r --unbuffered 'select(.id=="'${m}'")|{name, size, status}')"
+            place=$(echo $attachments | jq -M -r --unbuffered 'select(.attachment?.id=="'${m}'")|.parentPlace?.name')
+            subject=$(echo $attachments | jq -M -r --unbuffered 'select(.attachment?.id=="'${m}'")|.subject')
+            [[ -n "$place" ]] && _msg " Place: $place"
+            [[ -n "$subject" ]] && _msg " Document/Subject: $subject"
+            _msg "$(echo $attachments | jq -M -r --unbuffered '.attachment?|select(.id=="'${m}'")|{name, size, status}')"
             _msg
         done
         return 1
@@ -78,7 +117,7 @@ _attach_get_document() {
 _attach_update_file() {
     _msg "Looking for document..."
     local docs
-    docs=$( _attach_get_document ) || return 1
+    docs=$( _attach_find_document ) || return 1
 
     ## debug
 
@@ -118,7 +157,8 @@ _attach_file() {
             _attach_update_file || return 1;;
     esac
 
-    data="$(cat <<EOT
+
+data=$(cat <<EOT
 {
     "type": "${doctype}",
     "authorship": "$authorship",
@@ -143,7 +183,7 @@ cat <<EOT
     }
 }
 EOT
-)"
+)
     _dbg "data: $data"
     
     if [[ -n "$placeID" ]]; then
@@ -173,6 +213,14 @@ _update_file() {
     return $?
 }
 
+_get_file() {
+    local quiet
+    [[ "$1" == -q ]] && quiet=1 && shift
+    [[ -z "$1" ]] && return 1
+    local r=1
+    return $r
+}
+
 attach() {
     _dbg "ATTACH"
     help_cmd=_attach_help
@@ -183,6 +231,8 @@ attach() {
         ["--attach"]=action_attach_file::1
         ["-u"]=action_update_file::1
         ["--update"]=action_update_file::1
+        ["-g"]=action_retrieve_file::1
+        ["--get"]=action_retrieve_file::1
         ["-p"]=attach_place::1
         ["--place"]=attach_place::1
         ["-pid"]=attach_placeid::1
@@ -217,6 +267,7 @@ attach() {
     case $action in
         attach_file) _attach_file "$attach_file";r=$?;;
         update_file) _update_file "$update_file";r=$?;;
+        get_file) _get_file "$get_file";r=$?;;
     esac
     return $r
 }
